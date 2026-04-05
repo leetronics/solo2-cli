@@ -1,5 +1,8 @@
 app!();
 
+#[derive(PartialEq)]
+enum SlotKeyStatus { Present, Absent, Unknown }
+
 impl<'t> crate::Select<'t> for App<'t> {
     const RID: &'static [u8] = super::Rid::NIST;
     const PIX: &'static [u8] = super::Pix::PIV;
@@ -20,9 +23,10 @@ impl App<'_> {
         println!("Key slots:");
         for (name, tag, key_ref) in SLOTS {
             let indicator = match (self.slot_has_cert(tag), self.slot_has_key(*key_ref)) {
-                (true,  _)     => "certificate present",
-                (false, true)  => "key present, no certificate",
-                (false, false) => "empty",
+                (true,  _)                       => "certificate present",
+                (false, SlotKeyStatus::Present)  => "key present, no certificate",
+                (false, SlotKeyStatus::Absent)   => "empty",
+                (false, SlotKeyStatus::Unknown)  => "no certificate (PIN required to verify key)",
             };
             println!("  {name}: {indicator}");
         }
@@ -69,16 +73,19 @@ impl App<'_> {
     /// PIV checks the key reference before validating the algorithm, so:
     ///   SW 6A 88 = no key in slot
     ///   anything else (69 82 security, 6A 80 wrong algo, …) = key exists
-    fn slot_has_key(&mut self, key_ref: u8) -> bool {
-        // Use ECC P-256 (0x11) as algo — wrong algo errors still confirm key presence.
+    fn slot_has_key(&mut self, key_ref: u8) -> SlotKeyStatus {
         let dat = [0x7C, 0x00];
         match self.transport.call_iso(0x00, 0x87, 0x11, key_ref, &dat) {
-            Ok(_) => true,
+            Ok(_) => SlotKeyStatus::Present,
             Err(e) => {
                 let msg = e.to_string();
-                // 6A 88 = Referenced data not found → slot empty
-                // 6A 86 = Incorrect P1-P2 → also treat as empty (key ref unknown)
-                !msg.contains("(6A, 88)") && !msg.contains("(6A, 86)")
+                if msg.contains("(6A, 88)") {
+                    SlotKeyStatus::Absent   // Referenced data not found
+                } else if msg.contains("(69, 82)") {
+                    SlotKeyStatus::Unknown  // Security check before key check → can't tell
+                } else {
+                    SlotKeyStatus::Present  // wrong algo, etc. → key ref was found
+                }
             }
         }
     }
