@@ -8,18 +8,22 @@ impl<'t> crate::Select<'t> for App<'t> {
 impl App<'_> {
     /// Pretty-print slot and PIN status.
     pub fn print_status(&mut self) -> crate::Result<()> {
-        // Key slots: (display name, 3-byte GET DATA tag, key reference for VERIFY)
-        const SLOTS: &[(&str, [u8; 3])] = &[
-            ("9A  PIV Authentication", [0x5F, 0xC1, 0x07]),
-            ("9C  Digital Signature",  [0x5F, 0xC1, 0x0A]),
-            ("9D  Key Management",     [0x5F, 0xC1, 0x0B]),
-            ("9E  Card Authentication",[0x5F, 0xC1, 0x01]),
+
+        // Key slots: (display name, cert GET DATA tag, key ref for GENERAL AUTHENTICATE)
+        const SLOTS: &[(&str, [u8; 3], u8)] = &[
+            ("9A  PIV Authentication", [0x5F, 0xC1, 0x07], 0x9A),
+            ("9C  Digital Signature",  [0x5F, 0xC1, 0x0A], 0x9C),
+            ("9D  Key Management",     [0x5F, 0xC1, 0x0B], 0x9D),
+            ("9E  Card Authentication",[0x5F, 0xC1, 0x01], 0x9E),
         ];
 
         println!("Key slots:");
-        for (name, tag) in SLOTS {
-            let present = self.slot_has_cert(tag);
-            let indicator = if present { "certificate present" } else { "empty" };
+        for (name, tag, key_ref) in SLOTS {
+            let indicator = match (self.slot_has_cert(tag), self.slot_has_key(*key_ref)) {
+                (true,  _)     => "certificate present",
+                (false, true)  => "key present, no certificate",
+                (false, false) => "empty",
+            };
             println!("  {name}: {indicator}");
         }
 
@@ -58,6 +62,24 @@ impl App<'_> {
                 inner_tag_nonempty(&resp, 0x70)
             }
             Err(_) => false,
+        }
+    }
+
+    /// Probe key presence via GENERAL AUTHENTICATE (INS 0x87) with an empty DAT (7C 00).
+    /// PIV checks the key reference before validating the algorithm, so:
+    ///   SW 6A 88 = no key in slot
+    ///   anything else (69 82 security, 6A 80 wrong algo, …) = key exists
+    fn slot_has_key(&mut self, key_ref: u8) -> bool {
+        // Use ECC P-256 (0x11) as algo — wrong algo errors still confirm key presence.
+        let dat = [0x7C, 0x00];
+        match self.transport.call_iso(0x00, 0x87, 0x11, key_ref, &dat) {
+            Ok(_) => true,
+            Err(e) => {
+                let msg = e.to_string();
+                // 6A 88 = Referenced data not found → slot empty
+                // 6A 86 = Incorrect P1-P2 → also treat as empty (key ref unknown)
+                !msg.contains("(6A, 88)") && !msg.contains("(6A, 86)")
+            }
         }
     }
 
