@@ -300,7 +300,13 @@ pub enum Instruction {
     Reset = 0x4,
     List = 0xA1,
     Calculate = 0xA2,
+    VerifyPin = 0xB2,
+    ChangePin = 0xB3,
+    SetPin = 0xB4,
 }
+
+const TAG_PASSWORD: u8 = 0x80;
+const TAG_NEW_PASSWORD: u8 = 0x81;
 
 impl Encodable for Tag {
     fn encoded_length(&self) -> flexiber::Result<flexiber::Length> {
@@ -460,5 +466,35 @@ impl App<'_> {
             .call_iso(0, Instruction::Reset as u8, 0xDE, 0xAD, &[])
             .map(drop)
         // _, self._salt, self._challenge = _parse_select(self.protocol.select(AID.OATH))
+    }
+
+    pub fn set_pin(&mut self, pin: &str) -> Result<()> {
+        let pin = pin.as_bytes();
+        let mut data = vec![TAG_PASSWORD, pin.len() as u8];
+        data.extend_from_slice(pin);
+        self.transport
+            .call_iso(0, Instruction::SetPin as u8, 0, 0, &data)
+            .map(drop)
+    }
+
+    pub fn change_pin(&mut self, old: &str, new: &str) -> Result<()> {
+        let (o, n) = (old.as_bytes(), new.as_bytes());
+        let mut data = vec![TAG_PASSWORD, o.len() as u8];
+        data.extend_from_slice(o);
+        data.push(TAG_NEW_PASSWORD);
+        data.push(n.len() as u8);
+        data.extend_from_slice(n);
+        self.transport
+            .call_iso(0, Instruction::ChangePin as u8, 0, 0, &data)
+            .map(drop)
+    }
+
+    pub fn verify_pin(&mut self, pin: &str) -> Result<()> {
+        let pin = pin.as_bytes();
+        let mut data = vec![TAG_PASSWORD, pin.len() as u8];
+        data.extend_from_slice(pin);
+        self.transport
+            .call_iso(0, Instruction::VerifyPin as u8, 0, 0, &data)
+            .map(drop)
     }
 }

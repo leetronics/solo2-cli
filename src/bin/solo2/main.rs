@@ -184,6 +184,9 @@ fn try_main(args: cli::Cli) -> anyhow::Result<()> {
                                 Ok(())
                             }
                             Reset => app.reset(),
+                            SetPin { pin } => app.set_pin(pin),
+                            ChangePin { old_pin, new_pin } => app.change_pin(old_pin, new_pin),
+                            VerifyPin { pin } => app.verify_pin(pin),
                             // TODO: factor out the conversion
                             Totp { label, timestamp } => {
                                 use solo2::apps::oath;
@@ -206,16 +209,45 @@ fn try_main(args: cli::Cli) -> anyhow::Result<()> {
                             }
                         }
                     }
+                    Openpgp(cmd) => {
+                        use cli::Openpgp::*;
+                        use solo2::apps::Openpgp;
+
+                        let mut app = Openpgp::select(&mut solo2)?;
+
+                        match cmd {
+                            Aid => {
+                                println!(
+                                    "{}",
+                                    hex::encode(Openpgp::application_id()).to_uppercase()
+                                );
+                                Ok(())
+                            }
+                            Status => {
+                                println!("{}", hex::encode(app.status()?));
+                                Ok(())
+                            }
+                            Reset => {
+                                app.reset()?;
+                                println!("OpenPGP applet reset.");
+                                Ok(())
+                            }
+                        }
+                    }
                     Piv(piv) => {
                         use cli::Piv::*;
                         use solo2::apps::Piv;
 
-                        // let mut app = Piv::select(&mut solo2)?;
-                        Piv::select(&mut solo2)?;
+                        let mut app = Piv::select(&mut solo2)?;
 
                         match piv {
                             Aid => {
                                 println!("{}", hex::encode(Piv::application_id()).to_uppercase());
+                                Ok(())
+                            }
+                            Reset => {
+                                app.reset()?;
+                                println!("PIV applet reset.");
                                 Ok(())
                             }
                         }
@@ -350,6 +382,16 @@ fn try_main(args: cli::Cli) -> anyhow::Result<()> {
                 for bootloader in bootloaders {
                     println!("{}", &Device::Lpc55(bootloader));
                 }
+            }
+            cli::Bootloader::FlashBin { file } => {
+                let data = std::fs::read(&file)?;
+                let device = match uuid {
+                    Some(uuid) => Device::having(uuid)?,
+                    None => interactively_select(Device::list(), "Solo 2 devices")?,
+                };
+                let bar = indicatif::ProgressBar::new(data.len() as u64);
+                let progress = |bytes: usize| bar.set_position(bytes as u64);
+                device.program_bin(&data, Some(&progress))?;
             }
         },
         cli::Subcommands::Completion(args) => {

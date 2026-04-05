@@ -92,6 +92,8 @@ pub mod ndef;
 pub use ndef::App as Ndef;
 pub mod oath;
 pub use oath::App as Oath;
+pub mod openpgp;
+pub use openpgp::App as Openpgp;
 pub mod piv;
 pub use piv::App as Piv;
 pub mod provision;

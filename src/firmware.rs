@@ -73,3 +73,24 @@ impl Firmware {
         self.len() == 0
     }
 }
+
+const FLASH_ALIGN: usize = 512;
+
+/// Flash a raw binary (produced by `cargo objcopy -- -O binary`).
+/// Pads to 512-byte boundary, erases [0x00000000..len), then writes.
+pub fn write_flash_bin(
+    bootloader: &lpc55::Bootloader,
+    data: &[u8],
+    progress: Option<&dyn Fn(usize)>,
+) {
+    let mut padded = data.to_vec();
+    let overshoot = padded.len() % FLASH_ALIGN;
+    if overshoot > 0 {
+        padded.resize(padded.len() + FLASH_ALIGN - overshoot, 0);
+    }
+    bootloader.erase_flash(0x0000_0000, padded.len());
+    bootloader.write_memory(0x0000_0000, padded);
+    if let Some(cb) = progress {
+        cb(data.len());
+    }
+}

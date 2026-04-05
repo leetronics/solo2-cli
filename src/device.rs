@@ -64,13 +64,13 @@ impl Solo2 {
         drop(solo2);
 
         std::thread::sleep(std::time::Duration::from_secs(1));
-        let mut lpc55 = Lpc55::having(uuid);
+        let mut lpc55 = Lpc55::try_find(Some(0x1209), Some(0xb000), Some(uuid));
         while lpc55.is_err() {
             if now.elapsed().as_secs() > 15 {
                 return Err(anyhow!("User prompt to confirm maintenance timed out (or udev rules for LPC 55 mode missing)!"));
             }
             std::thread::sleep(std::time::Duration::from_secs(1));
-            lpc55 = Lpc55::having(uuid);
+            lpc55 = Lpc55::try_find(Some(0x1209), Some(0xb000), Some(uuid));
         }
 
         lpc55
@@ -315,6 +315,24 @@ impl Device {
             Device::Lpc55(lpc55) => Ok(lpc55),
             Device::Solo2(solo2) => solo2.into_lpc55(),
         }
+    }
+
+    pub fn program_bin(
+        self,
+        data: &[u8],
+        progress: Option<&dyn Fn(usize)>,
+    ) -> Result<()> {
+        let lpc55 = match self {
+            Device::Lpc55(lpc55) => lpc55,
+            Device::Solo2(solo2) => {
+                println!("Tap button on key to confirm, or replug to abort...");
+                Self::Solo2(solo2).into_lpc55()?
+            }
+        };
+        println!("LPC55 Bootloader detected. Writing firmware...");
+        crate::firmware::write_flash_bin(&lpc55, data, progress);
+        println!("Done. Rebooting.");
+        Self::Lpc55(lpc55).into_solo2().map(drop)
     }
 
     pub fn program(

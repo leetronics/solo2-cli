@@ -105,6 +105,11 @@ pub enum Bootloader {
     // },
     /// Reboots (into device if firmware is valid)
     Reboot,
+    /// Flash a raw binary file (.bin) to internal flash
+    FlashBin {
+        /// Path to the raw .bin firmware file (produced by cargo objcopy)
+        file: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -165,6 +170,8 @@ pub enum Apps {
     Ndef(Ndef),
     #[clap(subcommand)]
     Oath(Oath),
+    #[clap(subcommand)]
+    Openpgp(Openpgp),
     #[clap(subcommand)]
     Piv(Piv),
     #[clap(subcommand)]
@@ -242,6 +249,19 @@ pub enum Oath {
         /// timestamp to use to generate the OTP, as seconds since the UNIX epoch
         timestamp: Option<String>,
     },
+    /// Set a new OATH PIN (only when no PIN is currently set)
+    SetPin {
+        pin: String,
+    },
+    /// Change the current OATH PIN
+    ChangePin {
+        old_pin: String,
+        new_pin: String,
+    },
+    /// Verify/unlock the OATH session with the current PIN
+    VerifyPin {
+        pin: String,
+    },
 }
 
 #[derive(Args)]
@@ -293,10 +313,24 @@ pub enum OathKind {
 
 #[derive(Subcommand)]
 #[clap(infer_subcommands = true)]
+/// OpenPGP app
+pub enum Openpgp {
+    /// Print the application's AID
+    Aid,
+    /// Show key slot status (hex dump of application related data)
+    Status,
+    /// Factory-reset the OpenPGP applet (deletes all keys, resets PINs to defaults)
+    Reset,
+}
+
+#[derive(Subcommand)]
+#[clap(infer_subcommands = true)]
 /// PIV app
 pub enum Piv {
     /// Print the application's AID
     Aid,
+    /// Factory-reset the PIV applet
+    Reset,
 }
 
 #[derive(Subcommand)]
