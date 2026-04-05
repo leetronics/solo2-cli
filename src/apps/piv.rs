@@ -76,33 +76,44 @@ impl App<'_> {
     }
 }
 
-/// Find a primitive tag in a flat TLV blob and return true if its value is non-empty / non-zero.
+/// Recursively search TLV data for `target_tag`; return true if found with non-zero content.
 fn inner_tag_nonempty(data: &[u8], target_tag: u8) -> bool {
-    let mut i = 0;
-    while i + 1 < data.len() {
-        let tag = data[i];
-        i += 1;
-        let len = if data[i] == 0x82 && i + 2 < data.len() {
-            let l = ((data[i + 1] as usize) << 8) | data[i + 2] as usize;
-            i += 3;
+    let mut pos = 0;
+    while pos < data.len() {
+        let tag = data[pos];
+        pos += 1;
+        if pos >= data.len() {
+            break;
+        }
+        // Parse BER length
+        let lb = data[pos] as usize;
+        pos += 1;
+        let len = if lb == 0x82 && pos + 1 < data.len() {
+            let l = ((data[pos] as usize) << 8) | data[pos + 1] as usize;
+            pos += 2;
             l
-        } else if data[i] == 0x81 && i + 1 < data.len() {
-            let l = data[i + 1] as usize;
-            i += 2;
+        } else if lb == 0x81 && pos < data.len() {
+            let l = data[pos] as usize;
+            pos += 1;
             l
         } else {
-            let l = data[i] as usize;
-            i += 1;
-            l
+            lb
         };
-        let end = i + len;
+        let end = pos + len;
         if end > data.len() {
             break;
         }
+        let value = &data[pos..end];
         if tag == target_tag {
-            return data[i..end].iter().any(|&b| b != 0);
+            return value.iter().any(|&b| b != 0);
         }
-        i = end;
+        // Recurse into any container (0x53 = PIV data object wrapper, or constructed bit set)
+        if tag == 0x53 || tag & 0x20 != 0 {
+            if inner_tag_nonempty(value, target_tag) {
+                return true;
+            }
+        }
+        pos = end;
     }
     false
 }
