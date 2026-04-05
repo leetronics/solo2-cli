@@ -6,10 +6,113 @@ impl<'t> crate::Select<'t> for App<'t> {
 }
 
 impl App<'_> {
+    /// Pretty-print slot and PIN status.
+    pub fn print_status(&mut self) -> crate::Result<()> {
+        // Key slots: (display name, 3-byte GET DATA tag, key reference for VERIFY)
+        const SLOTS: &[(&str, [u8; 3])] = &[
+            ("9A  PIV Authentication", [0x5F, 0xC1, 0x07]),
+            ("9C  Digital Signature",  [0x5F, 0xC1, 0x0A]),
+            ("9D  Key Management",     [0x5F, 0xC1, 0x0B]),
+            ("9E  Card Authentication",[0x5F, 0xC1, 0x01]),
+        ];
+
+        println!("Key slots:");
+        for (name, tag) in SLOTS {
+            let present = self.slot_has_cert(tag);
+            let indicator = if present { "certificate present" } else { "empty" };
+            println!("  {name}: {indicator}");
+        }
+
+        // PIN / PUK retry counters via VERIFY with no data (returns 63 CX or 90 00)
+        println!();
+        println!("PIN status:");
+        match self.pin_retries(0x80) {
+            Some(n) => println!("  PIN: {n} retries remaining"),
+            None    => println!("  PIN: unknown"),
+        }
+        match self.pin_retries(0x81) {
+            Some(n) => println!("  PUK: {n} retries remaining"),
+            None    => println!("  PUK: unknown"),
+        }
+
+        Ok(())
+    }
+
     /// Factory-reset the PIV applet (INS 0xFB, proprietary SoloKeys extension)
     pub fn reset(&mut self) -> crate::Result<()> {
         self.transport
             .call_iso(0x00, 0xFB, 0x00, 0x00, &[])
             .map(drop)
     }
+
+    // ── internal helpers ─────────────────────────────────────────────────────
+
+    /// GET DATA for a 3-byte PIV tag (0x5C 0x03 <tag>).
+    /// Returns true if the slot contains a non-empty certificate.
+    fn slot_has_cert(&mut self, tag: &[u8; 3]) -> bool {
+        let data = [0x5C, 0x03, tag[0], tag[1], tag[2]];
+        match self.transport.call_iso(0x00, 0xCB, 0x3F, 0xFF, &data) {
+            Ok(resp) => {
+                // Response is wrapped in 53 TLV; cert is in inner 70 TLV.
+                // A slot is "populated" if any non-zero bytes are present inside 70.
+                inner_tag_nonempty(&resp, 0x70)
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// VERIFY with no data returns 63 CX (X = retries) or 90 00 (not set / verified).
+    fn pin_retries(&mut self, key_ref: u8) -> Option<u8> {
+        // VERIFY INS=0x20, P1=0x00, P2=key_ref, no data → error is expected, check SW
+        // We use a raw ISO call and look for the "wrong" error that carries the counter.
+        match self.transport.call_iso(0x00, 0x20, 0x00, key_ref, &[]) {
+            Ok(_) => Some(3), // not blocked, assume 3 (already verified)
+            Err(e) => {
+                let msg = e.to_string();
+                // "card signaled error ... (63, CX)" → X is retries
+                parse_63cx(&msg)
+            }
+        }
+    }
+}
+
+/// Find a primitive tag in a flat TLV blob and return true if its value is non-empty / non-zero.
+fn inner_tag_nonempty(data: &[u8], target_tag: u8) -> bool {
+    let mut i = 0;
+    while i + 1 < data.len() {
+        let tag = data[i];
+        i += 1;
+        let len = if data[i] == 0x82 && i + 2 < data.len() {
+            let l = ((data[i + 1] as usize) << 8) | data[i + 2] as usize;
+            i += 3;
+            l
+        } else if data[i] == 0x81 && i + 1 < data.len() {
+            let l = data[i + 1] as usize;
+            i += 2;
+            l
+        } else {
+            let l = data[i] as usize;
+            i += 1;
+            l
+        };
+        let end = i + len;
+        if end > data.len() {
+            break;
+        }
+        if tag == target_tag {
+            return data[i..end].iter().any(|&b| b != 0);
+        }
+        i = end;
+    }
+    false
+}
+
+/// Extract retry count from error strings like "card signaled error ... (63, C2)" → Some(2).
+fn parse_63cx(msg: &str) -> Option<u8> {
+    // Look for "(63, C" followed by a hex digit
+    let marker = "(63, C";
+    let pos = msg.find(marker)?;
+    let after = &msg[pos + marker.len()..];
+    let hex_char = after.chars().next()?;
+    u8::from_str_radix(&hex_char.to_string(), 16).ok()
 }

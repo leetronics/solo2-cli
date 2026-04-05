@@ -317,7 +317,7 @@ pub enum OathKind {
 pub enum Openpgp {
     /// Print the application's AID
     Aid,
-    /// Show key slot status (hex dump of application related data)
+    /// Show key slot and PIN status
     Status,
     /// Factory-reset the OpenPGP applet (deletes all keys, resets PINs to defaults)
     Reset,
@@ -329,6 +329,8 @@ pub enum Openpgp {
 pub enum Piv {
     /// Print the application's AID
     Aid,
+    /// Show key slot and PIN status
+    Status,
     /// Factory-reset the PIV applet
     Reset,
 }

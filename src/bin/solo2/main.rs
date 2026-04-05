@@ -223,10 +223,7 @@ fn try_main(args: cli::Cli) -> anyhow::Result<()> {
                                 );
                                 Ok(())
                             }
-                            Status => {
-                                println!("{}", hex::encode(app.status()?));
-                                Ok(())
-                            }
+                            Status => app.print_status(),
                             Reset => {
                                 app.reset()?;
                                 println!("OpenPGP applet reset.");
@@ -245,6 +242,7 @@ fn try_main(args: cli::Cli) -> anyhow::Result<()> {
                                 println!("{}", hex::encode(Piv::application_id()).to_uppercase());
                                 Ok(())
                             }
+                            Status => app.print_status(),
                             Reset => {
                                 app.reset()?;
                                 println!("PIV applet reset.");
