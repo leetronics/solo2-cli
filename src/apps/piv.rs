@@ -9,19 +9,19 @@ impl App<'_> {
     /// Pretty-print slot and PIN status.
     pub fn print_status(&mut self) -> crate::Result<()> {
 
-        const SLOTS: &[(&str, [u8; 3])] = &[
-            ("9A  PIV Authentication", [0x5F, 0xC1, 0x05]),
-            ("9C  Digital Signature",  [0x5F, 0xC1, 0x0A]),
-            ("9D  Key Management",     [0x5F, 0xC1, 0x0B]),
-            ("9E  Card Authentication",[0x5F, 0xC1, 0x01]),
+        const SLOTS: &[(&str, [u8; 3], u8)] = &[
+            ("9A  PIV Authentication", [0x5F, 0xC1, 0x05], 0x9A),
+            ("9C  Digital Signature",  [0x5F, 0xC1, 0x0A], 0x9C),
+            ("9D  Key Management",     [0x5F, 0xC1, 0x0B], 0x9D),
+            ("9E  Card Authentication",[0x5F, 0xC1, 0x01], 0x9E),
         ];
 
         println!("Key slots:");
-        for (name, tag) in SLOTS {
-            let indicator = if self.slot_has_cert(tag) {
-                "certificate present"
-            } else {
-                "empty"
+        for (name, tag, key_ref) in SLOTS {
+            let indicator = match (self.slot_has_cert(tag), self.slot_has_key(*key_ref)) {
+                (true,  _)     => "certificate present",
+                (false, true)  => "key present, no certificate",
+                (false, false) => "empty",
             };
             println!("  {name}: {indicator}");
         }
@@ -62,6 +62,12 @@ impl App<'_> {
             }
             Err(_) => false,
         }
+    }
+
+    /// GET METADATA (INS 0xF7, YubiKey extension also supported by opcard).
+    /// Returns true if a key is present in the slot, no PIN required.
+    fn slot_has_key(&mut self, key_ref: u8) -> bool {
+        self.transport.call_iso(0x00, 0xF7, 0x00, key_ref, &[]).is_ok()
     }
 
     /// VERIFY with no data returns 63 CX (X = retries) or 90 00 (not set / verified).
