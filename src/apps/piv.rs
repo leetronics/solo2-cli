@@ -14,7 +14,7 @@ impl App<'_> {
 
         // Key slots: (display name, cert GET DATA tag, key ref for GENERAL AUTHENTICATE)
         const SLOTS: &[(&str, [u8; 3], u8)] = &[
-            ("9A  PIV Authentication", [0x5F, 0xC1, 0x07], 0x9A),
+            ("9A  PIV Authentication", [0x5F, 0xC1, 0x05], 0x9A),
             ("9C  Digital Signature",  [0x5F, 0xC1, 0x0A], 0x9C),
             ("9D  Key Management",     [0x5F, 0xC1, 0x0B], 0x9D),
             ("9E  Card Authentication",[0x5F, 0xC1, 0x01], 0x9E),
